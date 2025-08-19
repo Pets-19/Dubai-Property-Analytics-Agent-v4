@@ -12,6 +12,7 @@
         window.SALES_MAP = {{ sales_map | tojson | safe }};
         window.RENTALS_MAP = {{ rentals_map | tojson | safe }};
     </script>
+
     <script src="https://cdnjs.cloudflare.com/ajax/libs/awesomplete/1.1.5/awesomplete.min.js" async></script>
 </head>
 <body>
@@ -38,7 +39,7 @@
                 <div class="form-group"><label for="buy-bedrooms">Bedrooms</label><select id="buy-bedrooms"><option>Any</option><option>Studio</option><option>1 Bedroom</option><option>2 Bedrooms</option><option>3 Bedrooms</option><option>4 Bedrooms</option><option>5+ Bedrooms</option></select></div>
                 <div class="form-group"><label for="buy-status">Development Status</label><select id="buy-status"><option>Any</option><option value="Off-Plan">Off-Plan</option><option value="Ready">Ready</option></select></div>
                 <div class="form-group">
-                    <label for="buy-area-search">Area Name (start typing)</label>
+                    <label for="buy-area-search">Area Name</label>
                     <input type="text" id="buy-area-search" placeholder="e.g., Dubai Marina">
                 </div>
                 <button type="submit" class="search-button"><span>Analyze Sales Market</span></button>
@@ -56,7 +57,7 @@
                 </div>
                 <div class="form-group"><label for="rent-bedrooms">Bedrooms</label><select id="rent-bedrooms"><option>Any</option><option>Studio</option><option>1 Bedroom</option><option>2 Bedrooms</option><option>3 Bedrooms</option><option>4 Bedrooms</option><option>5+ Bedrooms</option></select></div>
                 <div class="form-group">
-                    <label for="rent-area-search">Area Name (start typing)</label>
+                    <label for="rent-area-search">Area Name</label>
                     <input type="text" id="rent-area-search" placeholder="e.g., Jumeirah Lakes Towers">
                 </div>
                 <button type="submit" class="search-button"><span>Analyze Rental Market</span></button>
@@ -76,9 +77,7 @@
         </div>
         <div id="results-summary">Enter your criteria to analyze the market.</div>
         <div id="results-grid" class="results-grid"></div>
-        <div id="lazy-load-spinner" class="lazy-load-spinner" style="display: none;">
-            <div class="spinner"></div><span>Loading more results...</span>
-        </div>
+
     </div>
 
     <script>
