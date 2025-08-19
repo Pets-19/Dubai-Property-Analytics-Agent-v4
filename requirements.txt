@@ -1,0 +1,7 @@
+Flask
+pandas
+python-dotenv
+google-generativeai
+gunicorn
+SQLAlchemy
+psycopg2-binary

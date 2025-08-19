@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dubai Property Analytics Agent</title>
+    <link rel="icon" href="/static/images/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/awesomplete/1.1.5/awesomplete.min.css" />
+    <link rel="stylesheet" href="/static/css/style.css">
+    
+    <script>
+        window.SALES_MAP = {{ sales_map | tojson | safe }};
+        window.RENTALS_MAP = {{ rentals_map | tojson | safe }};
+    </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/awesomplete/1.1.5/awesomplete.min.js" async></script>
+</head>
+<body>
+    <div class="container">
+        <header class="app-header">
+            <img src="/static/images/Logo.png" alt="Logo" class="logo">
+            <h1>Dubai Property Analytics Agent</h1>
+        </header>
+
+        <div class="tabs">
+            <button class="tab-button active" onclick="switchTab('buy')">Buy</button>
+            <button class="tab-button" onclick="switchTab('rent')">Rent</button>
+        </div>
+
+        <div id="buy-tab" class="tab-content active">
+            <form id="buy-search-form" class="search-form">
+                <div class="form-group"><label for="buy-budget">Maximum Budget (AED)</label><input type="number" id="buy-budget" value="3000000" required></div>
+                <div class="form-group">
+                    <label for="buy-property-type">Property Type</label>
+                    <select id="buy-property-type">
+                        <option>All Types</option><option value="Unit">Unit (Apartment/Flat)</option><option value="Building">Building</option><option value="Land">Land</option>
+                    </select>
+                </div>
+                <div class="form-group"><label for="buy-bedrooms">Bedrooms</label><select id="buy-bedrooms"><option>Any</option><option>Studio</option><option>1 Bedroom</option><option>2 Bedrooms</option><option>3 Bedrooms</option><option>4 Bedrooms</option><option>5+ Bedrooms</option></select></div>
+                <div class="form-group"><label for="buy-status">Development Status</label><select id="buy-status"><option>Any</option><option value="Off-Plan">Off-Plan</option><option value="Ready">Ready</option></select></div>
+                <div class="form-group">
+                    <label for="buy-area-search">Area Name (start typing)</label>
+                    <input type="text" id="buy-area-search" placeholder="e.g., Dubai Marina">
+                </div>
+                <button type="submit" class="search-button"><span>Analyze Sales Market</span></button>
+            </form>
+        </div>
+
+        <div id="rent-tab" class="tab-content">
+            <form id="rent-search-form" class="search-form">
+                <div class="form-group"><label for="rent-budget">Max Annual Rent (AED)</label><input type="number" id="rent-budget" value="200000" required></div>
+                <div class="form-group">
+                    <label for="rent-property-type">Property Type</label>
+                    <select id="rent-property-type">
+                        <option>All Types</option><option value="Unit">Unit (Apartment/Flat)</option>
+                    </select>
+                </div>
+                <div class="form-group"><label for="rent-bedrooms">Bedrooms</label><select id="rent-bedrooms"><option>Any</option><option>Studio</option><option>1 Bedroom</option><option>2 Bedrooms</option><option>3 Bedrooms</option><option>4 Bedrooms</option><option>5+ Bedrooms</option></select></div>
+                <div class="form-group">
+                    <label for="rent-area-search">Area Name (start typing)</label>
+                    <input type="text" id="rent-area-search" placeholder="e.g., Jumeirah Lakes Towers">
+                </div>
+                <button type="submit" class="search-button"><span>Analyze Rental Market</span></button>
+            </form>
+        </div>
+
+        <div id="ai-summary-container" class="ai-summary" style="display: none;">
+            <h4>🤖 AI-Powered Summary</h4>
+            <p id="ai-summary-text"></p>
+        </div>
+        <div id="analytics-dashboard" class="analytics-container" style="display: none;">
+            <div class="kpi-grid">
+                <div class="kpi-card"><h4 id="kpi-title-1">Total Transactions</h4><p id="total-transactions">0</p></div>
+                <div class="kpi-card"><h4 id="kpi-title-2">Total Sales Volume (AED)</h4><p id="total-volume">0</p></div>
+                <div class="kpi-card"><h4 id="kpi-title-3">Average Sale Price (AED)</h4><p id="average-price">0</p></div>
+            </div>
+        </div>
+        <div id="results-summary">Enter your criteria to analyze the market.</div>
+        <div id="results-grid" class="results-grid"></div>
+        <div id="lazy-load-spinner" class="lazy-load-spinner" style="display: none;">
+            <div class="spinner"></div><span>Loading more results...</span>
+        </div>
+    </div>
+
+    <script>
+        let activeTab = 'buy';
+        let isLoading = false;
+
+        function switchTab(tabName) {
+            activeTab = tabName;
+            document.querySelectorAll('.tab-button').forEach(button => button.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+            document.querySelector(`button[onclick="switchTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(`${tabName}-tab`).classList.add('active');
+            document.getElementById('ai-summary-container').style.display = 'none';
+            document.getElementById('analytics-dashboard').style.display = 'none';
+            document.getElementById('results-grid').innerHTML = '';
+            document.getElementById('results-summary').textContent = 'Enter your criteria to analyze the market.';
+        }
+
+        document.addEventListener("DOMContentLoaded", async function() {
+            try {
+                const [buyAreasRes, rentAreasRes] = await Promise.all([
+                    fetch('/api/areas/buy'),
+                    fetch('/api/areas/rent')
+                ]);
+                const buyAreas = await buyAreasRes.json();
+                const rentAreas = await rentAreasRes.json();
+                new Awesomplete(document.getElementById("buy-area-search"), { list: buyAreas });
+                new Awesomplete(document.getElementById("rent-area-search"), { list: rentAreas });
+            } catch (error) {
+                console.error("Failed to load area lists:", error);
+            }
+        });
+
+        document.getElementById('buy-search-form').addEventListener('submit', handleFormSubmit);
+        document.getElementById('rent-search-form').addEventListener('submit', handleFormSubmit);
+
+        async function handleFormSubmit(event) {
+            event.preventDefault();
+            if (isLoading) return;
+            isLoading = true;
+
+            const formId = event.target.id;
+            const searchType = formId.startsWith('buy') ? 'buy' : 'rent';
+            const button = event.target.querySelector('.search-button');
+
+            let searchPayload;
+            if (searchType === 'buy') {
+                searchPayload = {
+                    budget: document.getElementById('buy-budget').value,
+                    propertyType: document.getElementById('buy-property-type').value,
+                    bedrooms: document.getElementById('buy-bedrooms').value,
+                    status: document.getElementById('buy-status').value,
+                    area: document.getElementById('buy-area-search').value
+                };
+            } else { // rent
+                searchPayload = {
+                    annual_rent: document.getElementById('rent-budget').value,
+                    propertyType: document.getElementById('rent-property-type').value,
+                    bedrooms: document.getElementById('rent-bedrooms').value,
+                    area: document.getElementById('rent-area-search').value,
+                    status: 'Any'
+                };
+            }
+            
+            button.disabled = true;
+            button.innerHTML = `<div class="spinner"></div><span>Analyzing...</span>`;
+            document.getElementById('ai-summary-container').style.display = 'none';
+            document.getElementById('analytics-dashboard').style.display = 'none';
+            document.getElementById('results-summary').textContent = 'Fetching data and generating AI summary...';
+            document.getElementById('results-grid').innerHTML = '';
+
+            try {
+                const searchEndpoint = searchType === 'buy' ? '/search' : '/rent-search';
+                const analyticsEndpoint = searchType === 'buy' ? '/api/analytics' : '/api/rent-analytics';
+
+                const [searchResponse, analyticsResponse] = await Promise.all([
+                    fetch(searchEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(searchPayload) }),
+                    fetch(analyticsEndpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(searchPayload) })
+                ]);
+                
+                if (!searchResponse.ok || !analyticsResponse.ok) { throw new Error(`Server error`); }
+
+                const searchResults = await searchResponse.json();
+                const analyticsData = await analyticsResponse.json();
+                
+                updateAISummary(searchResults.summary);
+                updateDashboard(analyticsData, searchType);
+                displayListings(searchResults.data, searchType);
+
+            } catch (error) {
+                console.error("Search failed:", error);
+                document.getElementById('results-summary').textContent = 'An error occurred during analysis.';
+            } finally {
+                isLoading = false;
+                button.disabled = false;
+                button.innerHTML = `<span>Analyze ${searchType === 'buy' ? 'Sales' : 'Rental'} Market</span>`;
+            }
+        }
+
+        function updateAISummary(summaryText) {
+            const summaryContainer = document.getElementById('ai-summary-container');
+            if (summaryText) {
+                document.getElementById('ai-summary-text').innerHTML = summaryText.replace(/\n/g, '<br>');
+                summaryContainer.style.display = 'block';
+            }
+        }
+
+        function updateDashboard(data, searchType) {
+            const dashboard = document.getElementById('analytics-dashboard');
+            if (!data || !data.stats || data.stats.total_transactions === null) {
+                dashboard.style.display = 'none';
+                return;
+            }
+            const formatCurrency = (value) => value ? new Intl.NumberFormat('en-AE', { maximumFractionDigits: 0 }).format(value) : '0';
+            
+            document.getElementById('kpi-title-1').textContent = searchType === 'buy' ? 'Total Transactions' : 'Total Rental Contracts';
+            document.getElementById('kpi-title-2').textContent = searchType === 'buy' ? 'Total Sales Volume (AED)' : 'Total Rental Volume (AED)';
+            document.getElementById('kpi-title-3').textContent = searchType === 'buy' ? 'Average Sale Price (AED)' : 'Average Annual Rent (AED)';
+
+            document.getElementById('total-transactions').textContent = data.stats.total_transactions || 0;
+            document.getElementById('total-volume').textContent = formatCurrency(data.stats.total_volume);
+            document.getElementById('average-price').textContent = formatCurrency(data.stats.average_price);
+            dashboard.style.display = 'block';
+        }
+
+        function displayListings(properties, searchType) {
+            const resultsSummary = document.getElementById('results-summary');
+            const resultsGrid = document.getElementById('results-grid');
+            const summaryNoun = searchType === 'buy' ? 'transactions' : 'contracts';
+            resultsSummary.textContent = `Found ${properties.length} individual ${summaryNoun} matching your criteria.`;
+            resultsGrid.innerHTML = '';
+
+            if (!properties || properties.length === 0) {
+                resultsGrid.innerHTML = `<p>No individual ${summaryNoun} found.</p>`;
+                return;
+            }
+
+            const columnMap = searchType === 'buy' ? window.SALES_MAP : window.RENTALS_MAP;
+            const priceKey = searchType === 'buy' ? columnMap.price : 'trans_value';
+
+            properties.forEach(prop => {
+                const card = document.createElement('div');
+                card.className = 'property-card';
+                const priceValue = prop[priceKey];
+                const price = !isNaN(priceValue) ? new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED' }).format(priceValue) : 'N/A';
+                const propName = prop[columnMap.name] || 'Property Listing';
+                const beds = prop[columnMap.bedrooms] || 'N/A';
+                const areaName = prop[columnMap.area_name] || 'Area not specified';
+
+                card.innerHTML = `
+                    <h3>${propName}</h3>
+                    <div class="card-details">
+                        <p><strong>${searchType === 'buy' ? 'Price:' : 'Annual Rent:'}</strong> ${price}</p>
+                        <p><strong>Area:</strong> ${areaName}</p>
+                        <p><strong>Bedrooms:</strong> ${beds}</p>
+                    </div>
+                `;
+                resultsGrid.appendChild(card);
+            });
+        }
+    </script>
+</body>
+</html>
