@@ -265,12 +265,19 @@
                     bedroomsHtml = `<p><strong>Bedrooms:</strong> ${beds}</p>`;
                 }
 
+                let propertySubTypeHtml = '';
+                if (searchType === 'rent' && columnMap.property_sub_type) {
+                    const propertySubType = prop[columnMap.property_sub_type] || 'N/A';
+                    propertySubTypeHtml = `<p><strong>Property Sub Type:</strong> ${propertySubType}</p>`;
+                }
+
                 card.innerHTML = `
                     <h3>${propName}</h3>
                     <div class="card-details">
                         <p><strong>${searchType === 'buy' ? 'Price:' : 'Annual Rent:'}</strong> ${price}</p>
                         <p><strong>Area:</strong> ${areaName}</p>
                         <p><strong>Property Type:</strong> ${propertyType}</p>
+                        ${propertySubTypeHtml}
                         ${bedroomsHtml}
                     </div>
                 `;
