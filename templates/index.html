@@ -52,10 +52,17 @@
                 <div class="form-group">
                     <label for="rent-property-type">Property Type</label>
                     <select id="rent-property-type">
-                        <option>All Types</option><option value="Unit">Unit (Apartment/Flat)</option>
+                        <option>All Types</option>
+                        <!-- Options will be loaded dynamically -->
                     </select>
                 </div>
-                <div class="form-group"><label for="rent-bedrooms">Bedrooms</label><select id="rent-bedrooms"><option>Any</option><option>Studio</option><option>1 Bedroom</option><option>2 Bedrooms</option><option>3 Bedrooms</option><option>4 Bedrooms</option><option>5+ Bedrooms</option></select></div>
+                <div class="form-group">
+                    <label for="rent-property-subtype">Property Sub Type</label>
+                    <select id="rent-property-subtype">
+                        <option>All Sub Types</option>
+                        <!-- Options will be loaded dynamically -->
+                    </select>
+                </div>
                 <div class="form-group">
                     <label for="rent-area-search">Area Name</label>
                     <input type="text" id="rent-area-search" placeholder="e.g., Jumeirah Lakes Towers">
@@ -98,16 +105,39 @@
 
         document.addEventListener("DOMContentLoaded", async function() {
             try {
-                const [buyAreasRes, rentAreasRes] = await Promise.all([
+                const [buyAreasRes, rentAreasRes, rentPropertyTypesRes, rentPropertySubTypesRes] = await Promise.all([
                     fetch('/api/areas/buy'),
-                    fetch('/api/areas/rent')
+                    fetch('/api/areas/rent'),
+                    fetch('/api/property-types/rent'),
+                    fetch('/api/property-subtypes/rent')
                 ]);
                 const buyAreas = await buyAreasRes.json();
                 const rentAreas = await rentAreasRes.json();
+                const rentPropertyTypes = await rentPropertyTypesRes.json();
+                const rentPropertySubTypes = await rentPropertySubTypesRes.json();
+                
                 new Awesomplete(document.getElementById("buy-area-search"), { list: buyAreas });
                 new Awesomplete(document.getElementById("rent-area-search"), { list: rentAreas });
+                
+                // Load property types for rent tab
+                const rentPropertyTypeSelect = document.getElementById("rent-property-type");
+                rentPropertyTypes.forEach(type => {
+                    const option = document.createElement("option");
+                    option.value = type;
+                    option.textContent = type;
+                    rentPropertyTypeSelect.appendChild(option);
+                });
+                
+                // Load property sub types for rent tab
+                const rentPropertySubTypeSelect = document.getElementById("rent-property-subtype");
+                rentPropertySubTypes.forEach(subType => {
+                    const option = document.createElement("option");
+                    option.value = subType;
+                    option.textContent = subType;
+                    rentPropertySubTypeSelect.appendChild(option);
+                });
             } catch (error) {
-                console.error("Failed to load area lists:", error);
+                console.error("Failed to load lists:", error);
             }
         });
 
@@ -136,7 +166,7 @@
                 searchPayload = {
                     annual_rent: document.getElementById('rent-budget').value,
                     propertyType: document.getElementById('rent-property-type').value,
-                    bedrooms: document.getElementById('rent-bedrooms').value,
+                    propertySubType: document.getElementById('rent-property-subtype').value,
                     area: document.getElementById('rent-area-search').value,
                     status: 'Any'
                 };
@@ -150,6 +180,7 @@
             document.getElementById('results-grid').innerHTML = '';
 
             try {
+                console.log('Search payload:', JSON.stringify(searchPayload, null, 2));
                 const searchEndpoint = searchType === 'buy' ? '/search' : '/rent-search';
                 const analyticsEndpoint = searchType === 'buy' ? '/api/analytics' : '/api/rent-analytics';
 
@@ -169,7 +200,8 @@
 
             } catch (error) {
                 console.error("Search failed:", error);
-                document.getElementById('results-summary').textContent = 'An error occurred during analysis.';
+                console.error("Error details:", error.message);
+                document.getElementById('results-summary').textContent = `An error occurred during analysis: ${error.message}`;
             } finally {
                 isLoading = false;
                 button.disabled = false;
@@ -224,15 +256,22 @@
                 const priceValue = prop[priceKey];
                 const price = !isNaN(priceValue) ? new Intl.NumberFormat('en-AE', { style: 'currency', currency: 'AED' }).format(priceValue) : 'N/A';
                 const propName = prop[columnMap.name] || 'Property Listing';
-                const beds = prop[columnMap.bedrooms] || 'N/A';
                 const areaName = prop[columnMap.area_name] || 'Area not specified';
+                const propertyType = prop[columnMap.property_type] || 'N/A';
+
+                let bedroomsHtml = '';
+                if (searchType === 'buy' && columnMap.bedrooms) {
+                    const beds = prop[columnMap.bedrooms] || 'N/A';
+                    bedroomsHtml = `<p><strong>Bedrooms:</strong> ${beds}</p>`;
+                }
 
                 card.innerHTML = `
                     <h3>${propName}</h3>
                     <div class="card-details">
                         <p><strong>${searchType === 'buy' ? 'Price:' : 'Annual Rent:'}</strong> ${price}</p>
                         <p><strong>Area:</strong> ${areaName}</p>
-                        <p><strong>Bedrooms:</strong> ${beds}</p>
+                        <p><strong>Property Type:</strong> ${propertyType}</p>
+                        ${bedroomsHtml}
                     </div>
                 `;
                 resultsGrid.appendChild(card);

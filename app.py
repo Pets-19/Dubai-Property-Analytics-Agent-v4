@@ -97,7 +97,7 @@ print(f"🔍 RENTALS COLUMNS: {RENTALS_COLUMNS}")
 
 SALES_MAP = {
     'price': find_column_name(SALES_COLUMNS, ['trans_value', 'price']),
-    'property_type': find_column_name(SALES_COLUMNS, ['prop_type_en', 'property_type']),
+    'property_type': find_column_name(SALES_COLUMNS, ['prop_type_en', 'prop_sub_type_en', 'property_type']),
     'bedrooms': find_column_name(SALES_COLUMNS, ['rooms_en', 'bedrooms']),
     'status': find_column_name(SALES_COLUMNS, ['is_offplan_en', 'development_status']),
     'area_name': find_column_name(SALES_COLUMNS, ['area_en']),
@@ -107,8 +107,8 @@ SALES_MAP = {
 # --- EXPANDED RENTAL COLUMN SEARCH ---
 RENTALS_MAP = {
     'price': find_column_name(RENTALS_COLUMNS, ['annual_amount', 'annual_rent', 'rent_amount', 'amount', 'price', 'rent']),
-    'property_type': find_column_name(RENTALS_COLUMNS, ['prop_sub_type_en', 'property_type', 'prop_type_en', 'type']),
-    'bedrooms': find_column_name(RENTALS_COLUMNS, ['rooms', 'rooms_en', 'bedrooms', 'bedroom']),
+    'property_type': find_column_name(RENTALS_COLUMNS, ['prop_type_en', 'prop_sub_type_en', 'property_type', 'type']),
+    'property_sub_type': find_column_name(RENTALS_COLUMNS, ['prop_sub_type_en', 'property_subtype', 'sub_type']),
     'area_name': find_column_name(RENTALS_COLUMNS, ['area_en', 'area', 'location']),
     'name': find_column_name(RENTALS_COLUMNS, ['project_en', 'name', 'property_name']),
 }
@@ -127,10 +127,10 @@ def generate_ai_summary(filters, results_df, total_results, search_type):
     
     if search_type == 'buy':
         analysis_subject, price_metric, user_goal, budget_key = "sales transactions", "sale price", "a potential buyer", "budget"
+        query_text = " ".join([f for f in [filters.get("propertyType"), filters.get("bedrooms"), filters.get("status"), f"in {filters.get('area')}" if filters.get('area') else None] if f and 'Any' not in f and 'All' not in f]) or "all properties"
     else: # rent
         analysis_subject, price_metric, user_goal, budget_key = "rental contracts", "annual rent", "a potential renter", "budget"
-
-    query_text = " ".join([f for f in [filters.get("propertyType"), filters.get("bedrooms"), filters.get("status"), f"in {filters.get('area')}" if filters.get('area') else None] if f and 'Any' not in f and 'All' not in f]) or "all properties"
+        query_text = " ".join([f for f in [filters.get("propertyType"), filters.get("propertySubType"), filters.get("status"), f"in {filters.get('area')}" if filters.get('area') else None] if f and 'Any' not in f and 'All' not in f]) or "all properties"
     
     # Get budget value from either budget or annual_rent parameter
     budget_value = filters.get(budget_key) or filters.get('annual_rent') or 999999999
@@ -163,24 +163,46 @@ def build_where_clause(filters, map, price_key, is_rent=False):
 
     prop_type = filters.get('propertyType')
     if prop_type and 'All Types' not in prop_type:
-        # Fix property type mapping - frontend sends "Unit" but data has "Flat"
-        if prop_type == 'Unit':
-            prop_type = 'Flat'  # Map frontend "Unit" to database "Flat"
-        conditions.append(f"\"{map['property_type']}\" = :prop_type")
+        if is_rent:
+            # For rentals, search in both PROP_TYPE_EN and PROP_SUB_TYPE_EN
+            # Build an OR condition to search both columns
+            prop_type_col = find_column_name(RENTALS_COLUMNS, ['prop_type_en'])
+            prop_sub_type_col = find_column_name(RENTALS_COLUMNS, ['prop_sub_type_en'])
+            
+            if prop_type_col and prop_sub_type_col:
+                conditions.append(f"(\"{prop_type_col}\" = :prop_type OR \"{prop_sub_type_col}\" = :prop_type)")
+            elif prop_type_col:
+                conditions.append(f"\"{prop_type_col}\" = :prop_type")
+            elif prop_sub_type_col:
+                conditions.append(f"\"{prop_sub_type_col}\" = :prop_type")
+        else:
+            # For sales, use the standard property_type mapping
+            conditions.append(f"\"{map['property_type']}\" = :prop_type")
+        
         params['prop_type'] = prop_type
 
-    bedrooms = filters.get('bedrooms')
-    if bedrooms and 'Any' not in bedrooms:
-        beds_col = f"\"{map['bedrooms']}\""
-        if 'Studio' in bedrooms:
-            conditions.append(f"({beds_col} = 'Studio' OR {beds_col} IS NULL)")
-        else:
-            try:
-                num_beds_str = re.findall(r'\d+', bedrooms)[0]
-                # Since ROOMS column might be empty, be more flexible
-                conditions.append(f"({beds_col} LIKE '{num_beds_str} %' OR {beds_col} LIKE '%{num_beds_str}%')")
-            except (ValueError, IndexError): 
-                pass
+    # Handle property sub type filtering for rentals
+    if is_rent:
+        prop_sub_type = filters.get('propertySubType')
+        if prop_sub_type and 'All' not in prop_sub_type:
+            if 'property_sub_type' in map and map['property_sub_type']:
+                conditions.append(f"\"{map['property_sub_type']}\" = :prop_sub_type")
+                params['prop_sub_type'] = prop_sub_type
+
+    # Only apply bedrooms filtering for sales (buy), not for rentals
+    if not is_rent:
+        bedrooms = filters.get('bedrooms')
+        if bedrooms and 'Any' not in bedrooms:
+            beds_col = f"\"{map['bedrooms']}\""
+            if 'Studio' in bedrooms:
+                conditions.append(f"({beds_col} = 'Studio' OR {beds_col} IS NULL)")
+            else:
+                try:
+                    num_beds_str = re.findall(r'\d+', bedrooms)[0]
+                    # Since bedrooms column might be empty, be more flexible
+                    conditions.append(f"({beds_col} LIKE '{num_beds_str} %' OR {beds_col} LIKE '%{num_beds_str}%')")
+                except (ValueError, IndexError): 
+                    pass
     
     if not is_rent:
         status = filters.get('status')
@@ -381,6 +403,79 @@ def get_areas(search_type):
             time.sleep(1)  # Wait before retrying
     
     return jsonify([])
+
+@app.route('/api/property-types/<search_type>')
+def get_property_types(search_type):
+    if not engine: return jsonify([])
+    
+    # Only provide dynamic property types for rentals
+    if search_type == 'rent':
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                conn = engine.connect()
+                try:
+                    # Get unique values from both PROP_TYPE_EN and PROP_SUB_TYPE_EN
+                    prop_type_query = text("SELECT DISTINCT \"PROP_TYPE_EN\" FROM rentals WHERE \"PROP_TYPE_EN\" IS NOT NULL;")
+                    prop_sub_type_query = text("SELECT DISTINCT \"PROP_SUB_TYPE_EN\" FROM rentals WHERE \"PROP_SUB_TYPE_EN\" IS NOT NULL;")
+                    
+                    prop_types = [row[0] for row in conn.execute(prop_type_query)]
+                    prop_sub_types = [row[0] for row in conn.execute(prop_sub_type_query)]
+                    
+                    # Combine and remove duplicates
+                    all_types = list(set(prop_types + prop_sub_types))
+                    all_types.sort()
+                    
+                    conn.close()
+                    return jsonify(all_types)
+                except Exception as e:
+                    print(f"❌ PROPERTY TYPES FETCH FAILED for {search_type} (attempt {retry_count + 1}): {e}")
+                    conn.close()
+                    retry_count += 1
+            except Exception as e:
+                print(f"❌ CONNECTION FAILED (attempt {retry_count + 1}): {e}")
+                retry_count += 1
+                time.sleep(1)
+        
+        return jsonify(['Unit', 'Villa'])  # Fallback
+    else:
+        # For sales, return static options
+        return jsonify(['Unit', 'Building', 'Land'])
+
+@app.route('/api/property-subtypes/<search_type>')
+def get_property_subtypes(search_type):
+    if not engine: return jsonify([])
+    
+    # Only provide dynamic property subtypes for rentals
+    if search_type == 'rent':
+        max_retries = 3
+        retry_count = 0
+        
+        while retry_count < max_retries:
+            try:
+                conn = engine.connect()
+                try:
+                    # Get unique values from PROP_SUB_TYPE_EN only
+                    prop_sub_type_query = text("SELECT DISTINCT \"PROP_SUB_TYPE_EN\" FROM rentals WHERE \"PROP_SUB_TYPE_EN\" IS NOT NULL ORDER BY \"PROP_SUB_TYPE_EN\";")
+                    prop_sub_types = [row[0] for row in conn.execute(prop_sub_type_query)]
+                    
+                    conn.close()
+                    return jsonify(prop_sub_types)
+                except Exception as e:
+                    print(f"❌ PROPERTY SUBTYPES FETCH FAILED for {search_type} (attempt {retry_count + 1}): {e}")
+                    conn.close()
+                    retry_count += 1
+            except Exception as e:
+                print(f"❌ CONNECTION FAILED (attempt {retry_count + 1}): {e}")
+                retry_count += 1
+                time.sleep(1)
+        
+        return jsonify(['Flat', 'Villa', 'Office', 'Shop', 'Studio'])  # Fallback
+    else:
+        # For sales, return empty or relevant subtypes if needed
+        return jsonify([])
 
 if __name__ == '__main__':
     if not DATABASE_URL:
