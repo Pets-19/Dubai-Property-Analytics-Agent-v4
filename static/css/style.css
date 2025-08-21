@@ -292,3 +292,29 @@ div.awesomplete > ul {
     border: 1px solid var(--border-color);
     box-shadow: var(--shadow);
 }
+
+/* Project Filter Styles */
+.project-filter {
+    background-color: #f0f8ff;
+    border: 1px solid #b3d9ff;
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+    border-left: 4px solid var(--primary-color);
+}
+
+.project-filter .form-group {
+    margin: 0;
+    max-width: 300px;
+}
+
+.project-filter label {
+    color: var(--primary-color);
+    font-weight: 600;
+    margin-bottom: 10px;
+}
+
+.project-filter select {
+    border-color: var(--primary-color);
+    background-color: white;
+}

@@ -101,14 +101,13 @@ SALES_MAP = {
     'bedrooms': find_column_name(SALES_COLUMNS, ['rooms_en', 'bedrooms']),
     'status': find_column_name(SALES_COLUMNS, ['is_offplan_en', 'development_status']),
     'area_name': find_column_name(SALES_COLUMNS, ['area_en']),
-    'name': find_column_name(SALES_COLUMNS, ['procedure_en', 'property_name']),
+    'name': find_column_name(SALES_COLUMNS, ['project_en', 'procedure_en', 'property_name']),
 }
 
 # --- EXPANDED RENTAL COLUMN SEARCH ---
 RENTALS_MAP = {
     'price': find_column_name(RENTALS_COLUMNS, ['annual_amount', 'annual_rent', 'rent_amount', 'amount', 'price', 'rent']),
     'property_type': find_column_name(RENTALS_COLUMNS, ['prop_type_en', 'prop_sub_type_en', 'property_type', 'type']),
-    'property_sub_type': find_column_name(RENTALS_COLUMNS, ['prop_sub_type_en', 'property_subtype', 'sub_type']),
     'area_name': find_column_name(RENTALS_COLUMNS, ['area_en', 'area', 'location']),
     'name': find_column_name(RENTALS_COLUMNS, ['project_en', 'name', 'property_name']),
 }
@@ -130,7 +129,7 @@ def generate_ai_summary(filters, results_df, total_results, search_type):
         query_text = " ".join([f for f in [filters.get("propertyType"), filters.get("bedrooms"), filters.get("status"), f"in {filters.get('area')}" if filters.get('area') else None] if f and 'Any' not in f and 'All' not in f]) or "all properties"
     else: # rent
         analysis_subject, price_metric, user_goal, budget_key = "rental contracts", "annual rent", "a potential renter", "budget"
-        query_text = " ".join([f for f in [filters.get("propertyType"), filters.get("propertySubType"), filters.get("status"), f"in {filters.get('area')}" if filters.get('area') else None] if f and 'Any' not in f and 'All' not in f]) or "all properties"
+        query_text = " ".join([f for f in [filters.get("propertyType"), filters.get("status"), f"in {filters.get('area')}" if filters.get('area') else None] if f and 'Any' not in f and 'All' not in f]) or "all properties"
     
     # Get budget value from either budget or annual_rent parameter
     budget_value = filters.get(budget_key) or filters.get('annual_rent') or 999999999
@@ -180,14 +179,6 @@ def build_where_clause(filters, map, price_key, is_rent=False):
             conditions.append(f"\"{map['property_type']}\" = :prop_type")
         
         params['prop_type'] = prop_type
-
-    # Handle property sub type filtering for rentals
-    if is_rent:
-        prop_sub_type = filters.get('propertySubType')
-        if prop_sub_type and 'All' not in prop_sub_type:
-            if 'property_sub_type' in map and map['property_sub_type']:
-                conditions.append(f"\"{map['property_sub_type']}\" = :prop_sub_type")
-                params['prop_sub_type'] = prop_sub_type
 
     # Only apply bedrooms filtering for sales (buy), not for rentals
     if not is_rent:
@@ -443,39 +434,6 @@ def get_property_types(search_type):
     else:
         # For sales, return static options
         return jsonify(['Unit', 'Building', 'Land'])
-
-@app.route('/api/property-subtypes/<search_type>')
-def get_property_subtypes(search_type):
-    if not engine: return jsonify([])
-    
-    # Only provide dynamic property subtypes for rentals
-    if search_type == 'rent':
-        max_retries = 3
-        retry_count = 0
-        
-        while retry_count < max_retries:
-            try:
-                conn = engine.connect()
-                try:
-                    # Get unique values from PROP_SUB_TYPE_EN only
-                    prop_sub_type_query = text("SELECT DISTINCT \"PROP_SUB_TYPE_EN\" FROM rentals WHERE \"PROP_SUB_TYPE_EN\" IS NOT NULL ORDER BY \"PROP_SUB_TYPE_EN\";")
-                    prop_sub_types = [row[0] for row in conn.execute(prop_sub_type_query)]
-                    
-                    conn.close()
-                    return jsonify(prop_sub_types)
-                except Exception as e:
-                    print(f"❌ PROPERTY SUBTYPES FETCH FAILED for {search_type} (attempt {retry_count + 1}): {e}")
-                    conn.close()
-                    retry_count += 1
-            except Exception as e:
-                print(f"❌ CONNECTION FAILED (attempt {retry_count + 1}): {e}")
-                retry_count += 1
-                time.sleep(1)
-        
-        return jsonify(['Flat', 'Villa', 'Office', 'Shop', 'Studio'])  # Fallback
-    else:
-        # For sales, return empty or relevant subtypes if needed
-        return jsonify([])
 
 if __name__ == '__main__':
     if not DATABASE_URL:

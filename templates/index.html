@@ -57,13 +57,6 @@
                     </select>
                 </div>
                 <div class="form-group">
-                    <label for="rent-property-subtype">Property Sub Type</label>
-                    <select id="rent-property-subtype">
-                        <option>All Sub Types</option>
-                        <!-- Options will be loaded dynamically -->
-                    </select>
-                </div>
-                <div class="form-group">
                     <label for="rent-area-search">Area Name</label>
                     <input type="text" id="rent-area-search" placeholder="e.g., Jumeirah Lakes Towers">
                 </div>
@@ -82,6 +75,16 @@
                 <div class="kpi-card"><h4 id="kpi-title-3">Average Sale Price (AED)</h4><p id="average-price">0</p></div>
             </div>
         </div>
+        <!-- Project Filter - Only appears after Buy search results -->
+        <div id="project-filter-container" class="project-filter" style="display: none;">
+            <div class="form-group">
+                <label for="project-filter">Filter by Project Name</label>
+                <select id="project-filter">
+                    <option value="">All Projects</option>
+                </select>
+            </div>
+        </div>
+
         <div id="results-summary">Enter your criteria to analyze the market.</div>
         <div id="results-grid" class="results-grid"></div>
 
@@ -90,6 +93,8 @@
     <script>
         let activeTab = 'buy';
         let isLoading = false;
+        let currentProperties = []; // Store current search results for client-side filtering
+        let currentSearchType = '';
 
         function switchTab(tabName) {
             activeTab = tabName;
@@ -101,20 +106,22 @@
             document.getElementById('analytics-dashboard').style.display = 'none';
             document.getElementById('results-grid').innerHTML = '';
             document.getElementById('results-summary').textContent = 'Enter your criteria to analyze the market.';
+            
+            // Hide project filter when switching tabs
+            document.getElementById('project-filter-container').style.display = 'none';
+            currentProperties = [];
         }
 
         document.addEventListener("DOMContentLoaded", async function() {
             try {
-                const [buyAreasRes, rentAreasRes, rentPropertyTypesRes, rentPropertySubTypesRes] = await Promise.all([
+                const [buyAreasRes, rentAreasRes, rentPropertyTypesRes] = await Promise.all([
                     fetch('/api/areas/buy'),
                     fetch('/api/areas/rent'),
-                    fetch('/api/property-types/rent'),
-                    fetch('/api/property-subtypes/rent')
+                    fetch('/api/property-types/rent')
                 ]);
                 const buyAreas = await buyAreasRes.json();
                 const rentAreas = await rentAreasRes.json();
                 const rentPropertyTypes = await rentPropertyTypesRes.json();
-                const rentPropertySubTypes = await rentPropertySubTypesRes.json();
                 
                 new Awesomplete(document.getElementById("buy-area-search"), { list: buyAreas });
                 new Awesomplete(document.getElementById("rent-area-search"), { list: rentAreas });
@@ -127,15 +134,6 @@
                     option.textContent = type;
                     rentPropertyTypeSelect.appendChild(option);
                 });
-                
-                // Load property sub types for rent tab
-                const rentPropertySubTypeSelect = document.getElementById("rent-property-subtype");
-                rentPropertySubTypes.forEach(subType => {
-                    const option = document.createElement("option");
-                    option.value = subType;
-                    option.textContent = subType;
-                    rentPropertySubTypeSelect.appendChild(option);
-                });
             } catch (error) {
                 console.error("Failed to load lists:", error);
             }
@@ -143,6 +141,9 @@
 
         document.getElementById('buy-search-form').addEventListener('submit', handleFormSubmit);
         document.getElementById('rent-search-form').addEventListener('submit', handleFormSubmit);
+        
+        // Add project filter event listener
+        document.getElementById('project-filter').addEventListener('change', handleProjectFilter);
 
         async function handleFormSubmit(event) {
             event.preventDefault();
@@ -166,7 +167,6 @@
                 searchPayload = {
                     annual_rent: document.getElementById('rent-budget').value,
                     propertyType: document.getElementById('rent-property-type').value,
-                    propertySubType: document.getElementById('rent-property-subtype').value,
                     area: document.getElementById('rent-area-search').value,
                     status: 'Any'
                 };
@@ -178,9 +178,12 @@
             document.getElementById('analytics-dashboard').style.display = 'none';
             document.getElementById('results-summary').textContent = 'Fetching data and generating AI summary...';
             document.getElementById('results-grid').innerHTML = '';
+            
+            // Hide project filter during new search
+            document.getElementById('project-filter-container').style.display = 'none';
+            currentProperties = [];
 
             try {
-                console.log('Search payload:', JSON.stringify(searchPayload, null, 2));
                 const searchEndpoint = searchType === 'buy' ? '/search' : '/rent-search';
                 const analyticsEndpoint = searchType === 'buy' ? '/api/analytics' : '/api/rent-analytics';
 
@@ -197,16 +200,79 @@
                 updateAISummary(searchResults.summary);
                 updateDashboard(analyticsData, searchType);
                 displayListings(searchResults.data, searchType);
+                
+                // Store current results for client-side filtering
+                currentProperties = searchResults.data;
+                currentSearchType = searchType;
+                
+                // Show project filter only for Buy tab
+                if (searchType === 'buy') {
+                    populateProjectFilter(searchResults.data);
+                    // Reset project filter selection
+                    document.getElementById('project-filter').value = '';
+                }
 
             } catch (error) {
                 console.error("Search failed:", error);
-                console.error("Error details:", error.message);
-                document.getElementById('results-summary').textContent = `An error occurred during analysis: ${error.message}`;
+                document.getElementById('results-summary').textContent = 'An error occurred during analysis.';
             } finally {
                 isLoading = false;
                 button.disabled = false;
                 button.innerHTML = `<span>Analyze ${searchType === 'buy' ? 'Sales' : 'Rental'} Market</span>`;
             }
+        }
+
+        function populateProjectFilter(properties) {
+            const projectFilter = document.getElementById('project-filter');
+            const projectFilterContainer = document.getElementById('project-filter-container');
+            
+            // Clear existing options except "All Projects"
+            projectFilter.innerHTML = '<option value="">All Projects</option>';
+            
+            // Get unique project names from current results
+            const columnMap = window.SALES_MAP;
+            const projectNames = new Set();
+            
+            properties.forEach(prop => {
+                const projectName = prop[columnMap.name];
+                if (projectName && projectName.trim() !== '') {
+                    projectNames.add(projectName.trim());
+                }
+            });
+            
+            // Sort project names alphabetically
+            const sortedProjectNames = Array.from(projectNames).sort();
+            
+            // Add options to the dropdown
+            sortedProjectNames.forEach(projectName => {
+                const option = document.createElement('option');
+                option.value = projectName;
+                option.textContent = projectName;
+                projectFilter.appendChild(option);
+            });
+            
+            // Show the project filter container
+            if (sortedProjectNames.length > 0) {
+                projectFilterContainer.style.display = 'block';
+            }
+        }
+
+        function handleProjectFilter(event) {
+            const selectedProject = event.target.value;
+            
+            // Filter properties based on selected project
+            let filteredProperties = currentProperties;
+            
+            if (selectedProject !== '') {
+                const columnMap = window.SALES_MAP;
+                filteredProperties = currentProperties.filter(prop => {
+                    const projectName = prop[columnMap.name];
+                    return projectName && projectName.trim() === selectedProject;
+                });
+            }
+            
+            // Update the display with filtered results
+            displayListings(filteredProperties, currentSearchType, true);
         }
 
         function updateAISummary(summaryText) {
@@ -235,11 +301,23 @@
             dashboard.style.display = 'block';
         }
 
-        function displayListings(properties, searchType) {
+        function displayListings(properties, searchType, isFiltered = false) {
             const resultsSummary = document.getElementById('results-summary');
             const resultsGrid = document.getElementById('results-grid');
             const summaryNoun = searchType === 'buy' ? 'transactions' : 'contracts';
-            resultsSummary.textContent = `Found ${properties.length} individual ${summaryNoun} matching your criteria.`;
+            
+            // Update summary text based on whether it's filtered or not
+            if (isFiltered && searchType === 'buy') {
+                const selectedProject = document.getElementById('project-filter').value;
+                if (selectedProject) {
+                    resultsSummary.textContent = `Showing ${properties.length} ${summaryNoun} from "${selectedProject}" project.`;
+                } else {
+                    resultsSummary.textContent = `Found ${properties.length} individual ${summaryNoun} matching your criteria.`;
+                }
+            } else {
+                resultsSummary.textContent = `Found ${properties.length} individual ${summaryNoun} matching your criteria.`;
+            }
+            
             resultsGrid.innerHTML = '';
 
             if (!properties || properties.length === 0) {
@@ -265,19 +343,12 @@
                     bedroomsHtml = `<p><strong>Bedrooms:</strong> ${beds}</p>`;
                 }
 
-                let propertySubTypeHtml = '';
-                if (searchType === 'rent' && columnMap.property_sub_type) {
-                    const propertySubType = prop[columnMap.property_sub_type] || 'N/A';
-                    propertySubTypeHtml = `<p><strong>Property Sub Type:</strong> ${propertySubType}</p>`;
-                }
-
                 card.innerHTML = `
                     <h3>${propName}</h3>
                     <div class="card-details">
                         <p><strong>${searchType === 'buy' ? 'Price:' : 'Annual Rent:'}</strong> ${price}</p>
                         <p><strong>Area:</strong> ${areaName}</p>
                         <p><strong>Property Type:</strong> ${propertyType}</p>
-                        ${propertySubTypeHtml}
                         ${bedroomsHtml}
                     </div>
                 `;
