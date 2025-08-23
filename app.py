@@ -124,9 +124,23 @@ def generate_ai_summary(filters, results_df, total_results, search_type):
     
     model = genai.GenerativeModel('gemini-1.5-flash-latest')
     
+    project_list_for_prompt = "" # Initialize
+    
     if search_type == 'buy':
         analysis_subject, price_metric, user_goal, budget_key = "sales transactions", "sale price", "a potential buyer", "budget"
         query_text = " ".join([f for f in [filters.get("propertyType"), filters.get("bedrooms"), filters.get("status"), f"in {filters.get('area')}" if filters.get('area') else None] if f and 'Any' not in f and 'All' not in f]) or "all properties"
+        
+        # --- NEW: Extract project names for the prompt ---
+        project_col = SALES_MAP.get('name')
+        if project_col and project_col in results_df.columns:
+            # Get unique, non-empty project names
+            project_names = results_df[project_col].dropna().unique()
+            project_names = [name for name in project_names if str(name).strip()]
+            if project_names:
+                # Take a sample of up to 10 project names to keep the prompt concise
+                sample_projects = project_names[:10]
+                project_list_for_prompt = f"The data includes properties from various projects such as: {', '.join(sample_projects)}."
+
     else: # rent
         analysis_subject, price_metric, user_goal, budget_key = "rental contracts", "annual rent", "a potential renter", "budget"
         query_text = " ".join([f for f in [filters.get("propertyType"), filters.get("status"), f"in {filters.get('area')}" if filters.get('area') else None] if f and 'Any' not in f and 'All' not in f]) or "all properties"
@@ -137,10 +151,11 @@ def generate_ai_summary(filters, results_df, total_results, search_type):
     prompt = f"""
     You are a professional Dubai real estate market analyst. Your goal is to provide concise, actionable insights to {user_goal} based on recent {analysis_subject}.
     The user is analyzing the market for: "{query_text}" with a maximum {price_metric} of {int(budget_value):,} AED.
-    Our database found a total of {total_results} recent {analysis_subject} that match these criteria. Based on an analysis of this data, generate a professional and helpful summary.
+    Our database found a total of {total_results} recent {analysis_subject} that match these criteria. {project_list_for_prompt}
+    Based on an analysis of this data, generate a professional and helpful summary.
     - Start with a clear opening sentence stating the total number of contracts/transactions found.
     - Analyze the data to identify key insights, like the typical price range or popular areas.
-    - Conclude with a direct, actionable tip for the user.
+    - Conclude with a direct, actionable tip for the user. For the 'buy' tab, if there are multiple projects, suggest using the 'Filter by Project Name' dropdown to explore specific developments.
     """
     try:
         data_sample = results_df.head(100).to_string(index=False)
