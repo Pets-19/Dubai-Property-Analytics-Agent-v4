@@ -4,4 +4,7 @@ python-dotenv
 google-generativeai
 gunicorn
 SQLAlchemy
-psycopg2-binary
+google-cloud-bigquery
+sqlalchemy-bigquery
+pyarrow
+pandas-gbq
